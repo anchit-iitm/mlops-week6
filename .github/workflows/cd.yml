@@ -66,14 +66,14 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Install gke-gcloud-auth-plugin
-        run: gcloud components install gke-gcloud-auth-plugin
+        run: sudo apt-get update && sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin
 
       - name: Get GKE credentials
         run: gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} --region ${{ env.GKE_REGION }}
 
       - name: Set production values in k8s manifest
         run: |
-          sed -i 's|YOUR_MLFLOW_SERVER_IP|${{ secrets.MLFLOW_SERVER_IP }}|g' k8f/deployment.yaml
+          sed -i 's|YOUR_MLFLOW_SERVER_IP|${{ secrets.MLFLOW_SERVER_IP }}|g' k8s/deployment.yaml
           sed -i 's|YOUR_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g' k8s/deployment.yaml
 
       - name: Deploy to GKE
