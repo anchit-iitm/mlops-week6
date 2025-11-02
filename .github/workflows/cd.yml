@@ -2,14 +2,14 @@ name: CD - Deploy Iris API to GKE
 
 on:
   push:
-    branches: [ main ] # This pipeline runs on merge/push to main
+    branches: [ main ]
 
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GCP_REGION: asia-south1 
-  GKE_CLUSTER_NAME: iris-cluster 
-  GAR_REPO_NAME: iris-api-repo 
-  DEPLOYMENT_NAME: iris-api-deployment 
+  GCP_REGION: asia-south2
+  GKE_CLUSTER_NAME: iris-cluster
+  GAR_REPO_NAME: iris-api-repo
+  DEPLOYMENT_NAME: iris-api-deployment
   IMAGE_NAME: iris-api
 
 jobs:
@@ -24,6 +24,24 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+
+    # --- NEW DEBUG STEP ---
+    - name: Check if secrets are set
+      run: |
+        if [ -z "${{ secrets.GCP_WIF_PROVIDER }}" ]; then
+          echo "::error::ERROR: GCP_WIF_PROVIDER secret is NOT set or empty."
+          exit 1
+        else
+          echo "GCP_WIF_PROVIDER is set."
+        fi
+
+        if [ -z "${{ secrets.GCP_SERVICE_ACCOUNT }}" ]; then
+          echo "::error::ERROR: GCP_SERVICE_ACCOUNT secret is NOT set or empty."
+          exit 1
+        else
+          echo "GCP_SERVICE_ACCOUNT is set."
+        fi
+    # --- END OF NEW STEP ---
 
     - name: Authenticate to GCP
       id: auth
@@ -41,19 +59,17 @@ jobs:
         
     - name: Tag and Push Docker Image
       run: |
-        # Create a unique tag using the short Git commit SHA
         export IMAGE_TAG=${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/$IMAGE_NAME:${{ github.sha }}
         docker tag $IMAGE_NAME $IMAGE_TAG
         docker push $IMAGE_TAG
         
     - name: 'Store image URI for deploy'
-      # Save the full image URI as an environment variable for the next job
       run: echo "IMAGE_URI=$IMAGE_TAG" >> $GITHUB_ENV
 
   deploy-to-gke:
     name: Deploy to GKE
     runs-on: ubuntu-latest
-    needs: build-and-push-image # This job waits for the first job to finish
+    needs: build-and-push-image
 
     permissions:
       contents: 'read'
@@ -71,21 +87,15 @@ jobs:
         service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
     - name: Get GKE credentials
-      # This configures 'kubectl' inside the GitHub runner to talk to your cluster
       run: gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} --region ${{ env.GCP_REGION }}
 
     - name: Set production values in k8s manifest
-      # This step replaces the placeholders in your deployment.yaml file
       run: |
         sed -i 's|YOUR_MLFLOW_SERVER_IP|${{ secrets.MLFLOW_SERVER_IP }}|g' k8s/deployment.yaml
         sed -i 's|YOUR_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g' k8s/deployment.yaml
 
     - name: Deploy to GKE
       run: |
-        # Apply the service first (LoadBalancer, etc.)
         kubectl apply -f k8s/deployment.yaml
-        
-        # Now, update the deployment to use the new image we just built
-        # This triggers a graceful rolling update of your Pods
         kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} api-container=${{ env.IMAGE_URI }}
 
