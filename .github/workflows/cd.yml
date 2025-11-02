@@ -1,101 +1,90 @@
 name: CD - Deploy Iris API to GKE
 
 on:
-  push:
-    branches: [ main ]
+push:
+  branches: [ main ] # This pipeline runs on merge/push to main
 
 env:
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GCP_REGION: asia-south2
-  GKE_CLUSTER_NAME: iris-cluster
-  GAR_REPO_NAME: iris-api-repo
-  DEPLOYMENT_NAME: iris-api-deployment
-  IMAGE_NAME: iris-api
+GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+# --- FIX: We now have TWO region variables ---
+GAR_REGION: asia-south1     # Region for your Artifact Registry
+GKE_REGION: asia-south2     # Region for your GKE Cluster
+
+GKE_CLUSTER_NAME: iris-cluster 
+GAR_REPO_NAME: iris-api-repo 
+DEPLOYMENT_NAME: iris-api-deployment 
+IMAGE_NAME: iris-api
 
 jobs:
-  build-and-push-image:
-    name: Build and Push to Artifact Registry
-    runs-on: ubuntu-latest
+build-and-push-image:
+  name: Build and Push to Artifact Registry
+  runs-on: ubuntu-latest
 
-    permissions:
-      contents: 'read'
-      id-token: 'write'
+  permissions:
+    contents: 'read'
+    id-token: 'write'
 
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v3
+  steps:
+  - name: Checkout
+    uses: actions/checkout@v3
 
-    # --- NEW DEBUG STEP ---
-    - name: Check if secrets are set
-      run: |
-        if [ -z "${{ secrets.GCP_WIF_PROVIDER }}" ]; then
-          echo "::error::ERROR: GCP_WIF_PROVIDER secret is NOT set or empty."
-          exit 1
-        else
-          echo "GCP_WIF_PROVIDER is set."
-        fi
+  - name: Authenticate to GCP
+    id: auth
+    uses: 'google-github-actions/auth@v1'
+    with:
+      workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-        if [ -z "${{ secrets.GCP_SERVICE_ACCOUNT }}" ]; then
-          echo "::error::ERROR: GCP_SERVICE_ACCOUNT secret is NOT set or empty."
-          exit 1
-        else
-          echo "GCP_SERVICE_ACCOUNT is set."
-        fi
-    # --- END OF NEW STEP ---
+  - name: Configure Docker
+    # --- FIX: Uses the GAR_REGION variable ---
+    run: gcloud auth configure-docker ${{ env.GAR_REGION }}-docker.pkg.dev
 
-    - name: Authenticate to GCP
-      id: auth
-      uses: 'google-github-actions/auth@v1'
-      with:
-        workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-        service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+  - name: Build Docker Image
+    run: |
+      docker build -t $IMAGE_NAME -f Dockerfile .
+      
+  - name: Tag and Push Docker Image
+    run: |
+      # --- FIX: Uses the GAR_REGION variable ---
+      export IMAGE_TAG=${{ env.GAR_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/$IMAGE_NAME:${{ github.sha }}
+      docker tag $IMAGE_NAME $IMAGE_TAG
+      docker push $IMAGE_TAG
+      
+  - name: 'Store image URI for deploy'
+    run: echo "IMAGE_URI=$IMAGE_TAG" >> $GITHUB_ENV
 
-    - name: Configure Docker
-      run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+deploy-to-gke:
+  name: Deploy to GKE
+  runs-on: ubuntu-latest
+  needs: build-and-push-image
 
-    - name: Build Docker Image
-      run: |
-        docker build -t $IMAGE_NAME -f Dockerfile .
-        
-    - name: Tag and Push Docker Image
-      run: |
-        export IMAGE_TAG=${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/$IMAGE_NAME:${{ github.sha }}
-        docker tag $IMAGE_NAME $IMAGE_TAG
-        docker push $IMAGE_TAG
-        
-    - name: 'Store image URI for deploy'
-      run: echo "IMAGE_URI=$IMAGE_TAG" >> $GITHUB_ENV
+  permissions:
+    contents: 'read'
+    id-token: 'write'
 
-  deploy-to-gke:
-    name: Deploy to GKE
-    runs-on: ubuntu-latest
-    needs: build-and-push-image
+  steps:
+  - name: Checkout
+    uses: actions/checkout@v3
 
-    permissions:
-      contents: 'read'
-      id-token: 'write'
+  - name: Authenticate to GCP
+    id: auth
+    uses: 'google-github-actions/auth@v1'
+    with:
+      workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+      service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v3
+  - name: Get GKE credentials
+    # --- FIX: Uses the GKE_REGION variable ---
+    run: gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} --region ${{ env.GKE_REGION }}
 
-    - name: Authenticate to GCP
-      id: auth
-      uses: 'google-github-actions/auth@v1'
-      with:
-        workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-        service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+  - name: Set production values in k8s manifest
+    run: |
+      sed -i 's|YOUR_MLFLOW_SERVER_IP|${{ secrets.MLFLOW_SERVER_IP }}|g' k8s/deployment.yaml
+      sed -i 's|YOUR_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g' k8s/deployment.yaml
 
-    - name: Get GKE credentials
-      run: gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} --region ${{ env.GCP_REGION }}
-
-    - name: Set production values in k8s manifest
-      run: |
-        sed -i 's|YOUR_MLFLOW_SERVER_IP|${{ secrets.MLFLOW_SERVER_IP }}|g' k8s/deployment.yaml
-        sed -i 's|YOUR_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g' k8s/deployment.yaml
-
-    - name: Deploy to GKE
-      run: |
-        kubectl apply -f k8s/deployment.yaml
-        kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} api-container=${{ env.IMAGE_URI }}
+  - name: Deploy to GKE
+    run: |
+      kubectl apply -f k8s/deployment.yaml
+      kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} api-container=${{ env.IMAGE_URI }}
 
