@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iris-api-deployment
+spec:
+  replicas: 2 # Start with 2 copies of our app
+  selector:
+    matchLabels:
+      app: iris-api
+  template:
+    metadata:
+      labels:
+        app: iris-api
+    spec:
+      containers:
+      - name: api-container
+        # !! IMPORTANT !!
+        # This is a placeholder. Our CD pipeline will replace this
+        # with the real image path and tag.
+        image: gcr.io/YOUR_PROJECT_ID/iris-api-repo:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: MLFLOW_TRACKING_URI
+          # We will set this value using a GitHub Secret
+          value: "http://YOUR_MLFLOW_SERVER_IP:5000"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iris-api-service
+spec:
+  # This creates an external IP address
+  type: LoadBalancer
+  ports:
+  - port: 80 # The port for the external IP
+    targetPort: 8080 # The port on the container
+  selector:
+    app: iris-api
+
+
