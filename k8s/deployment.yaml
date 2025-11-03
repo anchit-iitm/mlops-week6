@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: iris-api-deployment
 spec:
-  replicas: 2 # Start with 2 copies of our app
+  replicas: 2 
   selector:
     matchLabels:
       app: iris-api
@@ -14,12 +14,16 @@ spec:
     spec:
       containers:
       - name: api-container
-        # !! IMPORTANT !!
-        # This is a placeholder. Our CD pipeline will replace this
-        # with the real image path and tag.
         image: gcr.io/YOUR_PROJECT_ID/iris-api-repo:latest
         ports:
         - containerPort: 8080
+        resources:
+          requests:
+            cpu: "100m"     # 1/10th of a CPU
+            memory: "256Mi" # 256 Megabytes (plenty for this app)
+          limits:
+            cpu: "500m"     # Max 1/2 CPU
+            memory: "512Mi" # Max 512 Megabytes
         env:
         - name: MLFLOW_TRACKING_URI
           # We will set this value using a GitHub Secret
