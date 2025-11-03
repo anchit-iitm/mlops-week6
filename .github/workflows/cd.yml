@@ -41,16 +41,13 @@ jobs:
           docker build -t $IMAGE_NAME -f Dockerfile .
           
       - name: Tag, Push, and Set Output
-        id: build_and_push # Give the step an ID
+        id: build_and_push
         run: |
           export IMAGE_TAG=${{ env.GAR_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/$IMAGE_NAME:${{ github.sha }}
           docker tag $IMAGE_NAME $IMAGE_TAG
           docker push $IMAGE_TAG
-          # Set the step output using GITHUB_OUTPUT
           echo "image_uri=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          
-      - name: 'Store image URI for deploy'
-        run: echo "IMAGE_URI=$IMAGE_TAG" >> $GITHUB_ENV
+
 
   deploy-to-gke:
     name: Deploy to GKE
@@ -90,6 +87,5 @@ jobs:
       - name: Deploy to GKE
         run: |
           kubectl apply -f k8s/deployment.yaml
-          # Use the 'needs' context to get the output from the previous job
           kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} api-container=${{ needs.build-and-push-image.outputs.image_uri }}
 
