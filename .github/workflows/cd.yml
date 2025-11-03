@@ -83,6 +83,17 @@ jobs:
         run: |
           sed -i 's|YOUR_MLFLOW_SERVER_IP|${{ secrets.MLFLOW_SERVER_IP }}|g' k8s/deployment.yaml
           sed -i 's|YOUR_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g' k8s/deployment.yaml
+          
+      - name: Set production values in k8s manifest
+        run: |
+          sed -i 's|YOUR_MLFLOW_SERVER_IP|${{ secrets.MLFLOW_SERVER_IP }}|g' k8s/deployment.yaml
+          sed -i 's|YOUR_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g' k8s/deployment.yaml
+
+      - name: 'DEBUG: Print Received Image URI'
+        run: |
+          echo "--- DEBUG ---"
+          echo "Received image_uri: '${{ needs.build-and-push-image.outputs.image_uri }}'"
+          echo "--- END DEBUG ---"
 
       - name: Deploy to GKE
         run: |
