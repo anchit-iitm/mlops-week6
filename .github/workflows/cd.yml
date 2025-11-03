@@ -7,7 +7,7 @@ on:
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GAR_REGION: asia-south1
-  GKE_REGION: asia-south2
+  GKE_REGION: asia-south1
   GKE_CLUSTER_NAME: iris-cluster
   GAR_REPO_NAME: iris-api-repo
   DEPLOYMENT_NAME: iris-api-deployment
