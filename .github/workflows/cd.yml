@@ -21,7 +21,8 @@ jobs:
       contents: 'read'
       id-token: 'write'
     outputs:
-      image_uri: ${{ steps.build_and_push.outputs.image_uri }}
+      image_name: ${{ steps.build_and_push.outputs.image_name }}
+      image_tag: ${{ steps.build_and_push.outputs.image_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -46,7 +47,8 @@ jobs:
           export IMAGE_TAG=${{ env.GAR_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/$IMAGE_NAME:${{ github.sha }}
           docker tag $IMAGE_NAME $IMAGE_TAG
           docker push $IMAGE_TAG
-          echo "image_uri=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "image_name=${{ env.IMAGE_NAME }}" >> $GITHUB_OUTPUT
+          echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
 
 
   deploy-to-gke:
@@ -89,14 +91,10 @@ jobs:
           sed -i 's|YOUR_MLFLOW_SERVER_IP|${{ secrets.MLFLOW_SERVER_IP }}|g' k8s/deployment.yaml
           sed -i 's|YOUR_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g' k8s/deployment.yaml
 
-      - name: 'DEBUG: Print Image URI'
-        run: |
-          echo "--- START DEBUG ---"
-          echo "The image_uri I received is: '${{ needs.build-and-push-image.outputs.image_uri }}'"
-          echo "---  END DEBUG  ---"
-
       - name: Deploy to GKE
         run: |
+          export FULL_IMAGE_URI="${{ env.GAR_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ needs.build-and-push-image.outputs.image_name }}:${{ needs.build-and-push-image.outputs.image_tag }}"
+          echo "Deploying with image: $FULL_IMAGE_URI"
           kubectl apply -f k8s/deployment.yaml
-          kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} api-container=${{ needs.build-and-push-image.outputs.image_uri }}
+          kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} api-container=$FULL_IMAGE_URI
 
