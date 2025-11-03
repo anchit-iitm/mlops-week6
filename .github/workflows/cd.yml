@@ -89,11 +89,11 @@ jobs:
           sed -i 's|YOUR_MLFLOW_SERVER_IP|${{ secrets.MLFLOW_SERVER_IP }}|g' k8s/deployment.yaml
           sed -i 's|YOUR_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g' k8s/deployment.yaml
 
-      - name: 'DEBUG: Print Received Image URI'
+      - name: 'DEBUG: Print Image URI'
         run: |
-          echo "--- DEBUG ---"
-          echo "Received image_uri: '${{ needs.build-and-push-image.outputs.image_uri }}'"
-          echo "--- END DEBUG ---"
+          echo "--- START DEBUG ---"
+          echo "The image_uri I received is: '${{ needs.build-and-push-image.outputs.image_uri }}'"
+          echo "---  END DEBUG  ---"
 
       - name: Deploy to GKE
         run: |
