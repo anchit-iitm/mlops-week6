@@ -4,3 +4,4 @@ mlflow
 scikit-learn
 pandas
 pydantic
+google-cloud-storage
