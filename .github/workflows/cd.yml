@@ -114,8 +114,6 @@ jobs:
     permissions:
       contents: 'read'
       id-token: 'write'
-      issues: 'write'
-      pull-requests: 'write'
       
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -144,11 +142,6 @@ jobs:
         echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
         sudo apt-get update
         sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin
-        npm i -g @dvcorg/cml
-          npm install -g vega-cli vega-lite
-          sudo apt-get update && sudo apt-get install -y \
-            libcairo2-dev libfontconfig-dev libgif-dev \
-            libjpeg-dev libpango1.0-dev librsvg2-dev
 
     - name: Get GKE credentials
       run: gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} --region ${{ env.GKE_REGION }}
@@ -176,11 +169,5 @@ jobs:
     - name: Run wrk stress test (1000+ requests)
       run: |
         echo "Running stress test with 200 concurrent connections for 30s..."
-        echo "## 📈 Stress Test Results" > report.md
-        echo "\`\`\`" >> report.md
         # 200 connections for 30 seconds will generate thousands of requests
         wrk -t4 -c200 -d30s -s wrk_post.lua "http://${{ env.SERVICE_IP }}/predict"
-        echo "\`\`\`" >> report.md
-        
-        # report.md file gets posted as a comment
-        cml comment create report.md
