@@ -2,7 +2,7 @@ name: CD - Deploy and Stress Test Iris API
 
 on:
   push:
-    branches: [ week-7 ] # Triggers only on this branch
+    branches: [ week-7 ]
 
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -129,7 +129,11 @@ jobs:
     - name: Install wrk and GKE plugin
       run: |
         sudo apt-get update
-        sudo apt-get install -y wrk google-cloud-cli-gke-gcloud-auth-plugin
+        sudo apt-get install -y wrk ca-certificates curl gnupg
+        curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+        echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+        sudo apt-get update
+        sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin
 
     - name: Get GKE credentials
       run: gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} --region ${{ env.GKE_REGION }}
