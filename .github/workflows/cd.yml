@@ -125,7 +125,12 @@ jobs:
       with:
         workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
         service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-        
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+          node-version: '24'
+    
     - name: Install wrk and GKE plugin
       run: |
         sudo apt-get update
@@ -134,6 +139,11 @@ jobs:
         echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
         sudo apt-get update
         sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin
+        npm i -g @dvcorg/cml
+          npm install -g vega-cli vega-lite
+          sudo apt-get update && sudo apt-get install -y \
+            libcairo2-dev libfontconfig-dev libgif-dev \
+            libjpeg-dev libpango1.0-dev librsvg2-dev
 
     - name: Get GKE credentials
       run: gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} --region ${{ env.GKE_REGION }}
