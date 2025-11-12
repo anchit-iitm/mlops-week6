@@ -1,13 +1,14 @@
-name: CD - Deploy Iris API to GKE
+name: CD - Deploy and Stress Test Iris API
 
 on:
   push:
-    branches: [ main ]
+    branches: [ week-7 ] # Triggers only on this branch
 
 env:
   GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GAR_REGION: asia-south1
   GKE_REGION: asia-south1
+  
   GKE_CLUSTER_NAME: iris-cluster
   GAR_REPO_NAME: iris-api-repo
   DEPLOYMENT_NAME: iris-api-deployment
@@ -34,12 +35,14 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
+      - name: Install gke-gcloud-auth-plugin
+        run: sudo apt-get update && sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin
+
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.GAR_REGION }}-docker.pkg.dev
 
       - name: Build Docker Image
-        run: |
-          docker build -t $IMAGE_NAME -f Dockerfile .
+        run: docker build -t $IMAGE_NAME -f Dockerfile .
           
       - name: Tag, Push, and Set Output
         id: build_and_push
@@ -49,7 +52,6 @@ jobs:
           docker push $IMAGE_TAG
           echo "image_name=${{ env.IMAGE_NAME }}" >> $GITHUB_OUTPUT
           echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
-
 
   deploy-to-gke:
     name: Deploy to GKE
@@ -69,6 +71,7 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
+      # Using full, working install step
       - name: Install gke-gcloud-auth-plugin
         run: |
           sudo apt-get update
@@ -85,16 +88,68 @@ jobs:
         run: |
           sed -i 's|YOUR_MLFLOW_SERVER_IP|${{ secrets.MLFLOW_SERVER_IP }}|g' k8s/deployment.yaml
           sed -i 's|YOUR_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g' k8s/deployment.yaml
-          
-      - name: Set production values in k8s manifest
-        run: |
-          sed -i 's|YOUR_MLFLOW_SERVER_IP|${{ secrets.MLFLOW_SERVER_IP }}|g' k8s/deployment.yaml
-          sed -i 's|YOUR_PROJECT_ID|${{ env.GCP_PROJECT_ID }}|g' k8s/deployment.yaml
 
       - name: Deploy to GKE
         run: |
           export FULL_IMAGE_URI="${{ env.GAR_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.GAR_REPO_NAME }}/${{ needs.build-and-push-image.outputs.image_name }}:${{ needs.build-and-push-image.outputs.image_tag }}"
           echo "Deploying with image: $FULL_IMAGE_URI"
-          kubectl apply -f k8s/deployment.yaml
+          
+          # Apply all configs in the k8s folder
+          kubectl apply -f k8s/
+          
+          # Trigger the rolling update
           kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} api-container=$FULL_IMAGE_URI
 
+  # --- NEW JOB FOR STRESS TESTING ---
+  stress-test:
+    name: Stress Test with wrk
+    runs-on: ubuntu-latest
+    needs: deploy-to-gke
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3 # Needed for the wrk script
+
+    - name: Authenticate to GCP
+      id: auth
+      uses: 'google-github-actions/auth@v1'
+      with:
+        workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+        service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        
+    - name: Install wrk and GKE plugin
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wrk google-cloud-cli-gke-gcloud-auth-plugin
+
+    - name: Get GKE credentials
+      run: gcloud container clusters get-credentials ${{ env.GKE_CLUSTER_NAME }} --region ${{ env.GKE_REGION }}
+        
+    - name: Get External IP
+      id: get_ip
+      run: |
+        echo "Waiting for external IP... (This can take 2-3 minutes)"
+        while [ -z "$(kubectl get service iris-api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')" ]; do
+          sleep 10
+          kubectl get service iris-api-service
+        done
+        IP=$(kubectl get service iris-api-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        echo "SERVICE_IP=$IP" >> $GITHUB_ENV
+        echo "External IP found: $IP"
+
+    - name: Create Lua script for POST requests
+      run: |
+        cat <<EOF > wrk_post.lua
+        wrk.method = "POST"
+        wrk.body   = '{"sepal_length": 5.1, "sepal_width": 3.5, "petal_length": 1.4, "petal_width": 0.2}'
+        wrk.headers["Content-Type"] = "application/json"
+        EOF
+
+    - name: Run wrk stress test (1000+ requests)
+      run: |
+        echo "Running stress test with 200 concurrent connections for 30s..."
+        # 200 connections for 30 seconds will generate thousands of requests
+        wrk -t4 -c200 -d30s -s wrk_post.lua "http://${{ env.SERVICE_IP }}/predict"

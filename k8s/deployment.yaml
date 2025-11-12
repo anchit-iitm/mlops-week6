@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: iris-api-deployment
 spec:
-  replicas: 2 
+  replicas: 1 # We start with 1, the HPA will scale it up
   selector:
     matchLabels:
       app: iris-api
@@ -14,32 +14,31 @@ spec:
     spec:
       containers:
       - name: api-container
-        image: gcr.io/YOUR_PROJECT_ID/iris-api-repo:latest
+        # The image URI will be set by kubectl set image
+        image: placeholder
         ports:
         - containerPort: 8080
+        
+        # --- THIS IS THE CRITICAL ADDITION ---
+        # We must set resource requests for the HPA to work.
+        # This requests 20% of a single vCPU.
         resources:
           requests:
-            cpu: "100m"     # 1/10th of a CPU
-            memory: "256Mi" # 256 Megabytes (plenty for this app)
-          limits:
-            cpu: "500m"     # Max 1/2 CPU
-            memory: "512Mi" # Max 512 Megabytes
+            cpu: "200m" # "m" stands for milli-cores. 1000m = 1 vCPU.
+        
         env:
         - name: MLFLOW_TRACKING_URI
-          # We will set this value using a GitHub Secret
-          value: "http://YOUR_MLFLOW_SERVER_IP:5000"
+          # This value will be replaced by sed
+          value: "YOUR_MLFLOW_SERVER_IP"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: iris-api-service
 spec:
-  # This creates an external IP address
   type: LoadBalancer
   ports:
-  - port: 80 # The port for the external IP
-    targetPort: 8080 # The port on the container
+  - port: 80
+    targetPort: 8080
   selector:
     app: iris-api
-
-
