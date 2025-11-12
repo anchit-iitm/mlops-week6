@@ -161,5 +161,11 @@ jobs:
     - name: Run wrk stress test (1000+ requests)
       run: |
         echo "Running stress test with 200 concurrent connections for 30s..."
+        echo "## 📈 Stress Test Results" > report.md
+        echo "\`\`\`" >> report.md
         # 200 connections for 30 seconds will generate thousands of requests
         wrk -t4 -c200 -d30s -s wrk_post.lua "http://${{ env.SERVICE_IP }}/predict"
+        echo "\`\`\`" >> report.md
+        
+        # report.md file gets posted as a comment
+        cml comment create report.md
